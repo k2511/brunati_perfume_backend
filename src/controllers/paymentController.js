@@ -20,15 +20,18 @@ exports.createOrder = async (req, res) => {
     const Product = require('../models/Product.js');
     let orderItems = [];
     for (let item of orderData.items) {
-        const product = await Product.findById(item.productId);
-        
-        if (!product) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "One or more products in your cart are no longer available. Please clear your cart and try again." 
-            });
+        const mongoose = require("mongoose");
+        let product = null;
+        const pId = item.productId || item.id;
+        if (pId && mongoose.Types.ObjectId.isValid(pId)) {
+            product = await Product.findById(pId);
         }
-
+        if (!product && item.slug) {
+            product = await Product.findOne({ slug: item.slug });
+        }
+        if (!product && item.name) {
+            product = await Product.findOne({ name: new RegExp(item.name.trim(), "i") });
+        }
         const sizeData = product.sizes ? product.sizes.find(s => s.size === item.size) : null;
         orderItems.push({
             productId: product._id,

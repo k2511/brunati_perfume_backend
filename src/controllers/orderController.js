@@ -9,7 +9,7 @@ exports.createOrder = async (req, res) => {
 
         const { items, sampleId, shippingAddress, paymentMethod } = req.body;
 
-        if (shippingAddress) {
+        if (req.user && shippingAddress) {
             // Check if this address already exists structurally
             const existingNum = req.user.addresses?.findIndex(a => 
                 a.street === shippingAddress.street && 
@@ -40,9 +40,9 @@ exports.createOrder = async (req, res) => {
 
         // Populate customer info for the Order model
         const customer = {
-            name:    shippingAddress?.name || req.user.name,
-            email:   req.user.email,
-            phone:   shippingAddress?.phone || req.user.phone,
+            name:    shippingAddress?.name || req.user?.name || "Customer",
+            email:   shippingAddress?.email || req.user?.email || "guest@brunati.in",
+            phone:   shippingAddress?.phone || req.user?.phone || "",
             alternatePhone: shippingAddress?.alternatePhone || "",
             street:  shippingAddress?.street || "",
             city:    shippingAddress?.city || "",
@@ -102,7 +102,7 @@ exports.createOrder = async (req, res) => {
         }
 
         const order = await Order.create({
-            userId: req.user._id,
+            userId: req.user ? req.user._id : null,
             customer,
             items: orderItems,
             freeSample,
