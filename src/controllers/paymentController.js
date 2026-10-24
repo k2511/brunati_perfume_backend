@@ -107,10 +107,22 @@ exports.verifyPayment = async (req, res) => {
       .digest("hex");
 
     if (expected === razorpay_signature) {
-      await Order.findByIdAndUpdate(localOrderId, {
+            const updatedOrder = await Order.findByIdAndUpdate(localOrderId, {
         paymentStatus: 'paid',
         orderStatus: 'placed'
-      });
+      }, { new: true });
+
+      // Send Order Alert to Admin
+      try {
+        const adminEmail = process.env.ADMIN_NOTIFY_EMAIL || process.env.EMAIL_USER || "worldofbrunati@gmail.com";
+        await sendEmail({
+          email: adminEmail,
+          subject: `?? Online Payment Success! Brunati Order #${updatedOrder?.orderId || localOrderId}`,
+          message: `Online Payment Verified!\n\nOrder ID: #${updatedOrder?.orderId || localOrderId}\nCustomer: ${updatedOrder?.customer?.name || 'Customer'}\nPhone: ${updatedOrder?.customer?.phone || 'N/A'}\nTotal Paid: ?${updatedOrder?.totalAmount}\nPayment ID: ${razorpay_payment_id}\n\nPlease check Admin Dashboard.`
+        });
+      } catch (mailErr) {
+        console.error("Admin Payment Email Alert Error:", mailErr.message);
+      }
 
       res.json({
         razorpay_order_id,

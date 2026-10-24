@@ -110,17 +110,29 @@ exports.createOrder = async (req, res) => {
         });
 
         // ✅ Email: Order Placed (Awaited for Vercel/Reliability)
+                // 1. Send Order Confirmation to Customer
         if (req.user.email) {
             try {
                 await sendEmail({
                     email: req.user.email,
                     subject: `Order Confirmed! Your Brunati Order #${order.orderId}`,
-                    message: `Hello ${req.user.name},\n\nThank you for your order! We have received your order #${order.orderId} for ₹${order.totalAmount}.\n\nWe will notify you when your order ships.\n\nThank you for choosing Brunati.`
+                    message: `Hello ${req.user.name},\n\nThank you for your order! We have received your order #${order.orderId} for ?${order.totalAmount}.\n\nWe will notify you when your order ships.\n\nThank you for choosing Brunati.`
                 });
             } catch (err) {
-                console.error("Order Email Error:", err.message);
-                // We don't block the response if email fails, but we awaited the attempt
+                console.error("Customer Email Error:", err.message);
             }
+        }
+
+        // 2. Send New Order Alert to Admin
+        try {
+            const adminEmail = process.env.ADMIN_NOTIFY_EMAIL || process.env.EMAIL_USER || "worldofbrunati@gmail.com";
+            await sendEmail({
+                email: adminEmail,
+                subject: `?? New Order Alert! Brunati Order #${order.orderId}`,
+                message: `New Order Received!\n\nOrder ID: #${order.orderId}\nCustomer: ${order.customer?.name || req.user.name} (${req.user.email})\nPhone: ${order.customer?.phone || req.user.phone || 'N/A'}\nTotal Amount: ?${order.totalAmount}\nPayment Method: ${order.paymentMethod}\nShipping: ${order.customer?.street || ''}, ${order.customer?.city || ''}, ${order.customer?.state || ''} - ${order.customer?.pincode || ''}\n\nCheck your Admin Panel for full details.`
+            });
+        } catch (adminErr) {
+            console.error("Admin Alert Email Error:", adminErr.message);
         }
 
         res.status(201).json({
