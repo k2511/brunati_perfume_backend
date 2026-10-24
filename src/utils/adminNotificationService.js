@@ -109,7 +109,7 @@ const notifyAdminNewOrder = async (order) => {
                 </div>
 
                 <div style="margin-top: 24px; text-align: center;">
-                    <a href="https://brunati.in/admin/orders" style="display: inline-block; background: #000; color: #FFF; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">View in Admin Panel</a>
+                    <a href="http://localhost:5173/admin/orders" style="display: inline-block; background: #000; color: #FFF; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">View in Admin Panel</a>
                 </div>
             </div>
         </div>

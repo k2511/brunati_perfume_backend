@@ -133,7 +133,18 @@ exports.verifyPayment = async (req, res) => {
         paymentStatus: 'failed'
       });
 
-      res.json({ success: false });
+            // Send Failed Payment Alert to Admin
+      try {
+        const failedOrder = await Order.findById(localOrderId);
+        await sendEmail({
+          email: process.env.ADMIN_EMAIL || "worldofbrunati@gmail.com",
+          subject: `?? Payment Failed for Order #${failedOrder?.orderId || localOrderId}`,
+          message: `Payment Failed Alert!\nOrder: #${failedOrder?.orderId || localOrderId}\nCustomer: ${failedOrder?.customer?.name} (${failedOrder?.customer?.phone})\nAmount: ?${failedOrder?.totalAmount}\nStatus: FAILED / CANCELLED\n\nPlease check Admin Dashboard.`
+        });
+      } catch (errAlert) {
+        console.error("Failed Payment Alert Error:", errAlert.message);
+      }
+      res.json({ success: false, message: "Payment verification failed" });
     }
   } catch (err) {
     console.error(err);
