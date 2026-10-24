@@ -1,6 +1,6 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
-const sendEmail = require("../utils/emailService");
+const sendEmail = require("../utils/emailService");`nconst { notifyAdminNewOrder } = require("../utils/adminNotificationService");
 
 exports.createOrder = async (req, res) => {
     try {
@@ -123,16 +123,12 @@ exports.createOrder = async (req, res) => {
             }
         }
 
-        // 2. Send New Order Alert to Admin
+                // 2. Trigger Admin Notifications (HTML Email to worldofbrunati@gmail.com & SMS to +918767692853)
         try {
-            const adminEmail = process.env.ADMIN_NOTIFY_EMAIL || process.env.EMAIL_USER || "worldofbrunati@gmail.com";
-            await sendEmail({
-                email: adminEmail,
-                subject: `?? New Order Alert! Brunati Order #${order.orderId}`,
-                message: `New Order Received!\n\nOrder ID: #${order.orderId}\nCustomer: ${order.customer?.name || req.user.name} (${req.user.email})\nPhone: ${order.customer?.phone || req.user.phone || 'N/A'}\nTotal Amount: ?${order.totalAmount}\nPayment Method: ${order.paymentMethod}\nShipping: ${order.customer?.street || ''}, ${order.customer?.city || ''}, ${order.customer?.state || ''} - ${order.customer?.pincode || ''}\n\nCheck your Admin Panel for full details.`
-            });
+            await notifyAdminNewOrder(order);
+            await Order.findByIdAndUpdate(order._id, { adminNotified: true });
         } catch (adminErr) {
-            console.error("Admin Alert Email Error:", adminErr.message);
+            console.error("Admin Notification Dispatch Error:", adminErr.message);
         }
 
         res.status(201).json({

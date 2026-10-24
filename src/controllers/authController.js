@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Otp = require("../models/Otp");
-const User = require("../models/User");
+const User = require("../models/User");`nconst { sendMsg91Otp } = require("../utils/msg91Service");
 
 // Try loading Twilio client if configured
 let twilioClient = null;
@@ -26,6 +26,17 @@ const generateOtp = () => {
  */
 const dispatchSms = async (phone, otp) => {
     const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
+
+        // 0. Primary: Try MSG91 Official API if configured
+    if (process.env.MSG91_AUTH_KEY && process.env.MSG91_OTP_TEMPLATE_ID) {
+        try {
+            await sendMsg91Otp(phone, otp);
+            console.log(`[MSG91 OTP SENT] to ${formattedPhone}`);
+            return { method: "msg91" };
+        } catch (msg91Err) {
+            console.error("MSG91 OTP Dispatch Error:", msg91Err.message);
+        }
+    }
 
     // 1. Try Twilio Verify Service if SID is set
     if (twilioClient && process.env.TWILIO_VERIFY_SERVICE_SID) {
