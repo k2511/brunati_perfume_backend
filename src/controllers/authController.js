@@ -39,7 +39,8 @@ const dispatchSms = async (phone, otp) => {
     }
 
     // 1. Try Twilio Verify Service if SID is set
-    if (twilioClient && process.env.TWILIO_VERIFY_SERVICE_SID) {
+        // Twilio Verify (Only if valid VA... SID provided)
+    if (twilioClient && process.env.TWILIO_VERIFY_SERVICE_SID && process.env.TWILIO_VERIFY_SERVICE_SID.startsWith("VA")) {
         try {
             await twilioClient.verify.v2
                 .services(process.env.TWILIO_VERIFY_SERVICE_SID)
@@ -148,7 +149,7 @@ exports.verifyOTP = async (req, res) => {
         const otpRecord = await Otp.findOne({ phone: targetPhone });
 
         // 1. If Twilio Verify service is enabled, verify with Twilio first
-        if (twilioClient && process.env.TWILIO_VERIFY_SERVICE_SID) {
+                if (twilioClient && process.env.TWILIO_VERIFY_SERVICE_SID && process.env.TWILIO_VERIFY_SERVICE_SID.startsWith("VA")) {
             try {
                 const formattedNumber = `+91${targetPhone}`;
                 const verification = await twilioClient.verify.v2
