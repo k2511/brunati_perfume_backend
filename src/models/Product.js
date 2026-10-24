@@ -82,10 +82,7 @@ productSchema.pre("save", function () {
         return;
     }
 
-    this.slug = slugify(this.name, {
-        lower: true,
-        strict: true
-    });
+    let generatedSlug = slugify(this.name, { lower: true, strict: true }); if (!this.slug || this.isModified("name")) { this.slug = generatedSlug; }
 
 });
 
