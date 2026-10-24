@@ -60,7 +60,28 @@ const productSchema = new mongoose.Schema({
         base: [String]
     },
 
-    sizes: [sizeSchema],
+        sizes: [sizeSchema],
+
+    whereToWear: {
+        type: String,
+        default: ""
+    },
+    keyNotes: {
+        type: String,
+        default: ""
+    },
+    ingredients: {
+        type: String,
+        default: ""
+    },
+    shippingNotes: {
+        type: String,
+        default: ""
+    },
+    returnsExchanges: {
+        type: String,
+        default: ""
+    },
 
     story: {
         storyImages: [String],
