@@ -2,7 +2,8 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Otp = require("../models/Otp");
-const User = require("../models/User");`nconst { sendMsg91Otp } = require("../utils/msg91Service");
+const User = require("../models/User");
+const { sendMsg91Otp } = require("../utils/msg91Service");
 
 // Try loading Twilio client if configured
 let twilioClient = null;
