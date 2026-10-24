@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const Otp = require("../models/Otp");
 const User = require("../models/User");
 const { sendMsg91Otp } = require("../utils/msg91Service");
+const { sendFast2SmsOtp } = require("../utils/fast2smsService");
 
 // Try loading Twilio client if configured
 let twilioClient = null;
@@ -28,7 +29,17 @@ const generateOtp = () => {
 const dispatchSms = async (phone, otp) => {
     const formattedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
 
-        // 0. Primary: Try MSG91 Official API if configured
+            // 0. Primary: Try Fast2SMS API if configured
+    if (process.env.FAST2SMS_API_KEY || "PTSMWeSylqzwKx4SJ9iGP2ZI8jW1axoKokPaunCy7vwc1BjMqu6a7TLatEmcuWbNkqswEiO7Qox0YCBR") {
+        try {
+            await sendFast2SmsOtp(cleanMobile || phone, otp);
+            console.log(`[FAST2SMS OTP DISPATCH ATTEMPTED] to ${cleanMobile || phone}`);
+        } catch (f2sErr) {
+            console.error("Fast2SMS Dispatch Error:", f2sErr.message);
+        }
+    }
+
+    // 0.1 MSG91 Official API if configured
     if (process.env.MSG91_AUTH_KEY && process.env.MSG91_OTP_TEMPLATE_ID) {
         try {
             await sendMsg91Otp(phone, otp);
