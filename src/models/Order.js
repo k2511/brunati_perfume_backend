@@ -77,7 +77,11 @@ const orderSchema = new mongoose.Schema({
         default: "online"
     },
 
-    adminNotified: { type: Boolean, default: false },`n    orderStatus: {
+        adminNotified: {
+        type: Boolean,
+        default: false
+    },
+    orderStatus: {
         type: String,
         enum: [
             "placed",
