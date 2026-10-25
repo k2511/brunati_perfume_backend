@@ -1,5 +1,6 @@
 const sendEmail = require("./emailService");
 const { sendMsg91Sms } = require("./msg91Service");
+const Order = require("../models/Order");
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "worldofbrunati@gmail.com";
 const ADMIN_PHONE = process.env.ADMIN_PHONE || "+918767692853";
@@ -8,11 +9,17 @@ const ADMIN_PHONE = process.env.ADMIN_PHONE || "+918767692853";
  * Send comprehensive HTML email & SMS notification to Admin upon Order creation
  */
 const notifyAdminNewOrder = async (order) => {
-    if (!order) return;
+    if (!order || !order._id) return;
 
-    // Check if notification already sent (idempotency)
-    if (order.adminNotified) {
-        console.log(`Notification already sent for Order #${order.orderId}, skipping duplicate.`);
+    // Atomic idempotency check: lock adminNotified in database
+    const lockedOrder = await Order.findOneAndUpdate(
+        { _id: order._id, adminNotified: { $ne: true } },
+        { $set: { adminNotified: true } },
+        { new: true }
+    );
+
+    if (!lockedOrder) {
+        console.log(`Notification already sent/locked for Order #${order.orderId}, skipping duplicate.`);
         return;
     }
 
@@ -32,6 +39,17 @@ const notifyAdminNewOrder = async (order) => {
             <td style="padding: 10px 8px; font-size: 14px; text-align: right; color: #111;">₹${(item.price || 0) * (item.quantity || 1)}</td>
         </tr>
     `).join("");
+
+    const sampleRow = order.freeSample && order.freeSample.productName ? `
+        <tr style="border-bottom: 1px solid #E5E7EB; background: #FDFBF7;">
+            <td style="padding: 10px 8px; font-size: 14px; color: #92400E;">
+                <b>🎁 ${order.freeSample.productName}</b>
+                <div style="font-size: 12px; color: #B45309;">Complimentary Free Sample (1 ml)</div>
+            </td>
+            <td style="padding: 10px 8px; font-size: 14px; text-align: center; color: #92400E;">1</td>
+            <td style="padding: 10px 8px; font-size: 14px; text-align: right; color: #16A34A; font-weight: bold;">FREE</td>
+        </tr>
+    ` : "";
 
     const emailHtml = `
     <!DOCTYPE html>
@@ -88,6 +106,7 @@ const notifyAdminNewOrder = async (order) => {
                     </thead>
                     <tbody>
                         ${itemsRows}
+                        ${sampleRow}
                     </tbody>
                 </table>
 
@@ -95,12 +114,18 @@ const notifyAdminNewOrder = async (order) => {
                     <table style="font-size: 14px;">
                         <tr>
                             <td style="color: #6B7280; padding: 4px 0;">Subtotal</td>
-                            <td style="text-align: right; padding: 4px 0;">₹${order.totalAmount}</td>
+                            <td style="text-align: right; padding: 4px 0;">₹${order.subtotal || order.totalAmount}</td>
                         </tr>
                         <tr>
                             <td style="color: #6B7280; padding: 4px 0;">Shipping</td>
                             <td style="text-align: right; padding: 4px 0; color: #16A34A; font-weight: 600;">FREE</td>
                         </tr>
+                        ${order.codCharge > 0 ? `
+                        <tr>
+                            <td style="color: #6B7280; padding: 4px 0;">COD Charge</td>
+                            <td style="text-align: right; padding: 4px 0;">₹${order.codCharge}</td>
+                        </tr>
+                        ` : ''}
                         <tr style="font-size: 16px; font-weight: 700; border-top: 1px solid #E5E7EB;">
                             <td style="padding: 10px 0;">Final Total</td>
                             <td style="text-align: right; padding: 10px 0;">₹${order.totalAmount}</td>
@@ -109,7 +134,7 @@ const notifyAdminNewOrder = async (order) => {
                 </div>
 
                 <div style="margin-top: 24px; text-align: center;">
-                    <a href="http://localhost:5173/admin/orders" style="display: inline-block; background: #000; color: #FFF; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">View in Admin Panel</a>
+                    <a href="${process.env.ADMIN_URL || 'https://brunati.in/admin/orders'}" style="display: inline-block; background: #000; color: #FFF; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">View in Admin Panel</a>
                 </div>
             </div>
         </div>

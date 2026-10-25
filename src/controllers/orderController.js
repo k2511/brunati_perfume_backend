@@ -1,13 +1,22 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
+const Settings = require("../models/Settings");
 const sendEmail = require("../utils/emailService");
 const { notifyAdminNewOrder } = require("../utils/adminNotificationService");
+const { notifyCustomerOrderSuccess } = require("../utils/customerNotificationService");
+const mongoose = require("mongoose");
 
 exports.createOrder = async (req, res) => {
     try {
-
-
         const { items, sampleId, shippingAddress, paymentMethod } = req.body;
+
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({
+                status: false,
+                message: "Order items cannot be empty",
+                data: null
+            });
+        }
 
         if (req.user && shippingAddress) {
             // Check if this address already exists structurally
@@ -51,80 +60,96 @@ exports.createOrder = async (req, res) => {
         };
 
         let orderItems = [];
-        let total = 0;
+        let subtotal = 0;
 
         for (let item of items) {
+            const pId = item.productId || item.id;
+            const product = await Product.findById(pId);
 
-            const product = await Product.findById(item.productId);
+            if (!product) {
+                return res.status(400).json({
+                    status: false,
+                    message: `Product not found: ${item.name || pId}`,
+                    data: null
+                });
+            }
 
-            const sizeData = product.sizes.find(
+            const sizeData = product.sizes?.find(
                 s => s.size === item.size
             );
 
             if (!sizeData) {
                 return res.status(400).json({
                     status: false,
-                    message: "Selected product variant not found",
+                    message: `Selected variant (${item.size}) for ${product.name} not found`,
                     data: null
                 });
             }
 
+            const qty = Number(item.quantity) || 1;
             orderItems.push({
                 productId: product._id,
                 productName: product.name,
-                productImage: product.images[0],
+                productImage: product.images,
                 size: item.size,
                 mrp: sizeData.mrp,
                 price: sizeData.sellingPrice,
-                quantity: item.quantity
+                quantity: qty
             });
 
-            total += sizeData.sellingPrice * item.quantity;
-
-            // Stock decrement bypassed as per "Always Available" policy
+            subtotal += sizeData.sellingPrice * qty;
         }
 
+        // Fetch authoritative system settings
+        const settings = await Settings.findOne() || { freeSampleEnabled: true, codCharge: 0, allowedGifts: [] };
+
+        // Validate Free Gift Security
         let freeSample = null;
+        if (sampleId && settings.freeSampleEnabled) {
+            const isAllowed = (!settings.allowedGifts || settings.allowedGifts.length === 0)
+                || settings.allowedGifts.some(gId => gId.toString() === sampleId.toString());
 
-        if (sampleId) {
-            // Now sampleId is actually a Product ID for a 1ml sample
-            const sampleProduct = await Product.findById(sampleId);
-
-            if (sampleProduct && sampleProduct.isActive) {
-                freeSample = {
-                    productId: sampleProduct._id,
-                    productName: sampleProduct.name,
-                    productImage: sampleProduct.images,
-                    size: "1 ml"
-                };
-                // Samples don't have separate stock management now as per new requirement
+            if (isAllowed) {
+                const sampleProduct = await Product.findById(sampleId);
+                if (sampleProduct && sampleProduct.isActive) {
+                    freeSample = {
+                        productId: sampleProduct._id,
+                        productName: sampleProduct.name,
+                        productImage: sampleProduct.images,
+                        size: "1 ml"
+                    };
+                }
             }
         }
+
+        // Authoritative pricing calculation
+        const deliveryCharge = 0; // Free Standard Delivery
+        const selectedMethod = paymentMethod === "COD" ? "COD" : "online";
+        const codCharge = selectedMethod === "COD" ? Number(settings.codCharge || 0) : 0;
+        const totalAmount = subtotal + deliveryCharge + codCharge;
 
         const order = await Order.create({
             userId: req.user ? req.user._id : null,
             customer,
             items: orderItems,
             freeSample,
-            totalAmount: total,
-            paymentMethod: paymentMethod || "COD"
+            subtotal,
+            deliveryCharge,
+            codCharge,
+            totalAmount,
+            paymentMethod: selectedMethod,
+            paymentStatus: selectedMethod === "COD" ? "pending" : "pending",
+            orderStatus: "placed"
         });
 
-        // ✅ Email: Order Placed (Awaited for Vercel/Reliability)
-                // 1. Send Order Confirmation to Customer
-        if (req.user.email) {
-            try {
-                await sendEmail({
-                    email: req.user.email,
-                    subject: `Order Confirmed! Your Brunati Order #${order.orderId}`,
-                    message: `Hello ${req.user.name},\n\nThank you for your order! We have received your order #${order.orderId} for ?${order.totalAmount}.\n\nWe will notify you when your order ships.\n\nThank you for choosing Brunati.`
-                });
-            } catch (err) {
-                console.error("Customer Email Error:", err.message);
-            }
+        // 1. Send Order Confirmation Email to Customer (idempotent, formatted HTML)
+        try {
+            await notifyCustomerOrderSuccess(order);
+        } catch (err) {
+            console.error("Customer Email Error:", err.message);
         }
 
-                // 2. Trigger Admin Notifications (HTML Email to worldofbrunati@gmail.com & SMS to +918767692853)
+        // 2. Trigger Admin Notification (HTML Email to worldofbrunati@gmail.com)
         try {
             await notifyAdminNewOrder(order);
             await Order.findByIdAndUpdate(order._id, { adminNotified: true });
@@ -139,23 +164,34 @@ exports.createOrder = async (req, res) => {
         });
 
     } catch (error) {
-
+        console.error("Create Order Error:", error);
         res.status(500).json({
             status: false,
             message: error.message,
             data: null
         });
-
     }
-
 };
 
 exports.getOrderById = async (req, res) => {
     try {
-        const order = await Order.findOne({
-            orderId: req.params.orderId,
-            userId: req.user._id // Security: Ensure customer can only view their own order
-        });
+        const idParam = req.params.orderId;
+        let query = {};
+        if (mongoose.Types.ObjectId.isValid(idParam)) {
+            query = { $or: [{ _id: idParam }, { orderId: idParam }] };
+        } else {
+            query = { orderId: idParam };
+        }
+
+        // If user is authenticated and not admin, match user ID
+        if (req.user && !req.user.isAdmin) {
+            query.$or = [
+                ...(query.$or || [query]),
+                { userId: req.user._id }
+            ];
+        }
+
+        const order = await Order.findOne(query);
 
         if (!order) {
             return res.status(404).json({ status: false, message: "Order not found", data: null });
@@ -178,7 +214,7 @@ exports.cancelOrder = async (req, res) => {
             return res.status(404).json({ status: false, message: "Order not found", data: null });
         }
 
-        // Only allow cancellation if order hasn't been processed/shipped yet
+        // Only allow cancellation if order hasn't been shipped/delivered yet
         if (!["placed", "confirmed"].includes(order.orderStatus)) {
             return res.status(400).json({ 
                 status: false, 
@@ -187,22 +223,15 @@ exports.cancelOrder = async (req, res) => {
             });
         }
 
-        // 1. Items are always available, no need to return to stock
-
-        // 2. Samples don't have separate stock records in the new system
-        
-        // 3. Update order status
         order.orderStatus = "cancelled";
         await order.save();
 
-
-        // 4. Send Email (Awaited)
-        if (order.customer.email) {
+        if (order.customer?.email) {
             try {
                 await sendEmail({
                     email: order.customer.email,
                     subject: `Order Cancelled: #${order.orderId}`,
-                    message: `Hello ${order.customer.name},\n\nYour order #${order.orderId} has been successfully cancelled as per your request.\n\nIf this was a mistake, please reach out to us.\n\nBest regards,\nBrunati Team`
+                    message: `Hello ${order.customer.name},\n\nYour order #${order.orderId} has been cancelled.\n\nBest regards,\nBrunati Perfumes`
                 });
             } catch (err) {
                 console.error("Cancellation Email Error:", err.message);

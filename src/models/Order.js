@@ -1,24 +1,16 @@
 const mongoose = require("mongoose");
 
 const orderItemSchema = new mongoose.Schema({
-
     productId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Product"
     },
-
     productName: String,
-
     productImage: [String],
-
     size: String,
-
     mrp: Number,
     price: Number,
-
-
     quantity: Number
-
 });
 
 const freeSampleSchema = new mongoose.Schema({
@@ -34,9 +26,7 @@ const freeSampleSchema = new mongoose.Schema({
     }
 });
 
-
 const orderSchema = new mongoose.Schema({
-
     orderId: {
         type: String,
         unique: true
@@ -63,11 +53,26 @@ const orderSchema = new mongoose.Schema({
 
     freeSample: freeSampleSchema,
 
+    subtotal: {
+        type: Number,
+        default: 0
+    },
+
+    deliveryCharge: {
+        type: Number,
+        default: 0
+    },
+
+    codCharge: {
+        type: Number,
+        default: 0
+    },
+
     totalAmount: Number,
 
     paymentStatus: {
         type: String,
-        enum: ["pending", "paid", "failed"],
+        enum: ["pending", "paid", "failed", "cancelled"],
         default: "pending"
     },
 
@@ -77,10 +82,41 @@ const orderSchema = new mongoose.Schema({
         default: "online"
     },
 
-        adminNotified: {
+    razorpayOrderId: {
+        type: String,
+        default: null
+    },
+
+    razorpayPaymentId: {
+        type: String,
+        default: null
+    },
+
+    razorpaySignature: {
+        type: String,
+        default: null
+    },
+
+    paymentFailureReason: {
+        type: String,
+        default: null
+    },
+
+    adminNotified: {
         type: Boolean,
         default: false
     },
+
+    customerNotified: {
+        type: Boolean,
+        default: false
+    },
+
+    paymentFailureNotified: {
+        type: Boolean,
+        default: false
+    },
+
     orderStatus: {
         type: String,
         enum: [

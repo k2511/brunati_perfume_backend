@@ -11,6 +11,7 @@ router.post("/forgot-password", userController.forgotPassword);
 router.get("/me", authMiddleware, userController.getProfile);
 router.get("/check-auth", userController.checkAuth);
 router.put("/me/address", authMiddleware, userController.updateAddress);
+router.delete("/me/address/:addressId", authMiddleware, userController.deleteAddress);
 
 router.put("/me/password", authMiddleware, userController.changePassword);
 router.get("/orders", authMiddleware, userController.getUserOrders);

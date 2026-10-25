@@ -10,8 +10,18 @@ const settingsSchema = new mongoose.Schema({
     maxSamples: {
         type: Number,
         default: 1
+    },
+
+    allowedGifts: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Product"
+    }],
+
+    codCharge: {
+        type: Number,
+        default: 0
     }
 
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model("Settings", settingsSchema);

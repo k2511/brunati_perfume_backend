@@ -101,6 +101,7 @@ router.get("/banners", adminBannerController.getAllBanners);
 
 /* SETTINGS */
 
+router.get("/settings", adminSettingsController.getSettings);
 router.put("/settings/free-samples", adminSettingsController.updateFreeSampleSettings);
 
 /* POLICY MANAGEMENT */
@@ -110,4 +111,3 @@ router.put("/policies/:id", adminPolicyController.updatePolicy);
 router.delete("/policies/:id", adminPolicyController.deletePolicy);
 
 module.exports = router;
-

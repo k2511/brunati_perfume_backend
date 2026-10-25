@@ -6,21 +6,30 @@ exports.getAvailableSamples = async (req, res) => {
         // Always ensure a settings document exists with defaults (upsert)
         const settings = await Settings.findOneAndUpdate(
             {},
-            { $setOnInsert: { freeSampleEnabled: true, maxSamples: 1 } },
+            { $setOnInsert: { freeSampleEnabled: true, maxSamples: 1, allowedGifts: [], codCharge: 0 } },
             { upsert: true, new: true }
         );
 
         if (!settings.freeSampleEnabled) {
-            return res.json({ status: true, message: "Free samples are currently disabled", data: { samples: [] } });
+            return res.json({ 
+                status: true, 
+                message: "Free samples are currently disabled", 
+                data: { maxSamples: 0, samples: [] } 
+            });
         }
 
-        // Fetch all active products and present them as 1ml samples
-        const products = await Product.find({ isActive: true });
+        // Query active products based on admin allowedGifts configuration
+        let filter = { isActive: true };
+        if (settings.allowedGifts && settings.allowedGifts.length > 0) {
+            filter._id = { $in: settings.allowedGifts };
+        }
+
+        const products = await Product.find(filter);
 
         if (!products || products.length === 0) {
             return res.json({
                 status: true,
-                message: "No active products found to use as samples",
+                message: "No gifts available at the moment",
                 data: { maxSamples: settings.maxSamples || 1, samples: [] }
             });
         }

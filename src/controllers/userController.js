@@ -215,3 +215,30 @@ exports.checkAuth = async (req, res) => {
         res.json({ status: true, isLoggedIn: false, data: null });
     }
 };
+
+
+exports.deleteAddress = async (req, res) => {
+    try {
+        const { addressId } = req.params;
+        const user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(404).json({ status: false, message: "User not found" });
+        }
+
+        const address = user.addresses.id(addressId);
+        if (!address) {
+            return res.status(404).json({ status: false, message: "Address not found or unauthorized" });
+        }
+
+        user.addresses.pull({ _id: addressId });
+        await user.save();
+
+        res.json({
+            status: true,
+            message: "Address deleted successfully",
+            data: user.addresses
+        });
+    } catch (error) {
+        res.status(500).json({ status: false, message: error.message });
+    }
+};
