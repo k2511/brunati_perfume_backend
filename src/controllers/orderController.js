@@ -142,26 +142,24 @@ exports.createOrder = async (req, res) => {
             orderStatus: "placed"
         });
 
-        // 1. Send Order Confirmation Email to Customer (idempotent, formatted HTML)
-        try {
-            await notifyCustomerOrderSuccess(order);
-        } catch (err) {
-            console.error("Customer Email Error:", err.message);
-        }
-
-        // 2. Trigger Admin Notification (HTML Email to worldofbrunati@gmail.com)
-        try {
-            await notifyAdminNewOrder(order);
-            await Order.findByIdAndUpdate(order._id, { adminNotified: true });
-        } catch (adminErr) {
-            console.error("Admin Notification Dispatch Error:", adminErr.message);
-        }
-
+        // Send response immediately so checkout completes in milliseconds without waiting on external SMTP
         res.status(201).json({
             status: true,
             message: "Order created successfully",
             data: order
         });
+
+        // 1. Send Order Confirmation Email to Customer in background
+        notifyCustomerOrderSuccess(order).catch(err => {
+            console.error("Customer Email Error:", err.message);
+        });
+
+        // 2. Trigger Admin Notification in background
+        notifyAdminNewOrder(order)
+            .then(() => Order.findByIdAndUpdate(order._id, { adminNotified: true }))
+            .catch(adminErr => {
+                console.error("Admin Notification Dispatch Error:", adminErr.message);
+            });
 
     } catch (error) {
         console.error("Create Order Error:", error);

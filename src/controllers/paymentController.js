@@ -185,22 +185,6 @@ exports.verifyPayment = async (req, res) => {
         razorpaySignature: razorpay_signature
       }, { new: true });
 
-      if (updatedOrder) {
-        // Trigger Admin Notifications (HTML Email to worldofbrunati@gmail.com)
-        try {
-          await notifyAdminNewOrder(updatedOrder);
-        } catch (mailErr) {
-          console.error("Admin Payment Notification Dispatch Error:", mailErr.message);
-        }
-
-        // Trigger Customer Verified Receipt HTML Email
-        try {
-          await notifyCustomerOrderSuccess(updatedOrder);
-        } catch (custMailErr) {
-          console.error("Customer Receipt Dispatch Error:", custMailErr.message);
-        }
-      }
-
       res.json({
         success: true,
         razorpay_order_id,
@@ -208,6 +192,17 @@ exports.verifyPayment = async (req, res) => {
         localOrderId,
         orderId: updatedOrder?.orderId || localOrderId
       });
+
+      if (updatedOrder) {
+        // Trigger notifications asynchronously in background
+        notifyAdminNewOrder(updatedOrder).catch(mailErr => {
+          console.error("Admin Payment Notification Dispatch Error:", mailErr.message);
+        });
+
+        notifyCustomerOrderSuccess(updatedOrder).catch(custMailErr => {
+          console.error("Customer Receipt Dispatch Error:", custMailErr.message);
+        });
+      }
 
     } else {
       const failedOrder = await Order.findByIdAndUpdate(localOrderId, {

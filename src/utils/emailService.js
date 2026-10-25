@@ -1,8 +1,7 @@
 const nodemailer = require("nodemailer");
-//heyy
+
 const sendEmail = async (options) => {
     try {
-        // Warning: This requires EMAIL_USER and EMAIL_PASS to be set in .env
         if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
             console.warn("Email service Warning: Missing EMAIL_USER or EMAIL_PASS in .env. Skipping email dispatch.");
             return;
@@ -14,7 +13,10 @@ const sendEmail = async (options) => {
             auth: {
                 user: process.env.EMAIL_USER,
                 pass: process.env.EMAIL_PASS
-            }
+            },
+            connectionTimeout: 8000,
+            greetingTimeout: 8000,
+            socketTimeout: 10000
         });
 
         const mailOptions = {
@@ -33,9 +35,8 @@ const sendEmail = async (options) => {
         if (error.message.includes("EAUTH")) {
             console.error("HELP: This looks like a login error. Ensure you are using a Gmail 'App Password', not your main account password!");
         }
-        throw error; // Re-throw so controllers know it failed
+        throw error;
     }
-
 };
 
 module.exports = sendEmail;
