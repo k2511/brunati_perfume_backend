@@ -6,7 +6,7 @@ const Order = require('../models/Order.js');
 const Product = require('../models/Product.js');
 const Settings = require('../models/Settings.js');
 const mongoose = require("mongoose");
-const { notifyAdminNewOrder } = require("../utils/adminNotificationService.js");
+const { notifyAdminNewOrder, notifyAdminOrderCancelledOrFailed } = require("../utils/adminNotificationService.js");
 const { notifyCustomerOrderSuccess, notifyCustomerPaymentFailed } = require("../utils/customerNotificationService.js");
 
 exports.createOrder = async (req, res) => {  
@@ -207,6 +207,7 @@ exports.verifyPayment = async (req, res) => {
     } else {
       const failedOrder = await Order.findByIdAndUpdate(localOrderId, {
         paymentStatus: 'failed',
+        orderStatus: 'cancelled',
         paymentFailureReason: 'Signature verification mismatch'
       }, { new: true });
 
@@ -216,6 +217,10 @@ exports.verifyPayment = async (req, res) => {
         } catch (failErr) {
           console.error("Customer Failure Notification Error:", failErr.message);
         }
+
+        notifyAdminOrderCancelledOrFailed(failedOrder, 'Payment signature verification mismatch').catch(adminErr => {
+          console.error("Admin Failure Alert Error:", adminErr.message);
+        });
       }
 
       res.json({ success: false, message: "Payment verification failed" });
@@ -280,10 +285,12 @@ exports.razorpayWebhook = async (req, res) => {
         const order = await Order.findOne({ razorpayOrderId: rzpOrderId });
         if (order && order.paymentStatus !== 'paid') {
           order.paymentStatus = 'failed';
+          order.orderStatus = 'cancelled';
           order.paymentFailureReason = errorDesc;
           await order.save();
 
           await notifyCustomerPaymentFailed(order, errorDesc);
+          await notifyAdminOrderCancelledOrFailed(order, `Razorpay payment failed: ${errorDesc}`);
         }
       }
     }
@@ -292,6 +299,47 @@ exports.razorpayWebhook = async (req, res) => {
   } catch (error) {
     console.error("Webhook Processing Error:", error);
     res.status(500).json({ ok: false, message: error.message });
+  }
+};
+
+exports.cancelPaymentAttempt = async (req, res) => {
+  try {
+    const { localOrderId, reason } = req.body;
+    if (!localOrderId || !mongoose.Types.ObjectId.isValid(localOrderId)) {
+      return res.status(400).json({ success: false, message: "Invalid order ID" });
+    }
+
+    const order = await Order.findById(localOrderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    // If order was already paid, do not cancel
+    if (order.paymentStatus === 'paid') {
+      return res.status(400).json({ success: false, message: "Cannot cancel a paid order" });
+    }
+
+    const cancelReason = reason || "Customer dismissed/exited payment window";
+    order.paymentStatus = 'cancelled';
+    order.orderStatus = 'cancelled';
+    order.paymentFailureReason = cancelReason;
+    await order.save();
+
+    console.log(`[PAYMENT CANCELLED] Order #${order.orderId} marked cancelled. Reason: ${cancelReason}`);
+
+    // Notify Admin about cancelled payment attempt
+    notifyAdminOrderCancelledOrFailed(order, cancelReason).catch(adminErr => {
+      console.error("Admin cancellation alert error:", adminErr.message);
+    });
+
+    res.json({
+      success: true,
+      message: "Payment attempt cancelled successfully",
+      orderId: order.orderId
+    });
+  } catch (error) {
+    console.error("Cancel Payment Attempt Error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

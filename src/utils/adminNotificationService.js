@@ -2,11 +2,18 @@ const sendEmail = require("./emailService");
 const { sendMsg91Sms } = require("./msg91Service");
 const Order = require("../models/Order");
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "worldofbrunati@gmail.com";
+// Support both primary and alternate admin addresses to ensure 100% delivery
+const PRIMARY_ADMIN_EMAIL = process.env.ADMIN_EMAIL || "worldofbrunati@gmail.com";
+const ADMIN_EMAILS = Array.from(new Set([
+    PRIMARY_ADMIN_EMAIL,
+    "worldofbrunati@gmail.com",
+    "wordofbrunati@gmail.com"
+])).filter(Boolean);
+
 const ADMIN_PHONE = process.env.ADMIN_PHONE || "+918767692853";
 
 /**
- * Send comprehensive HTML email & SMS notification to Admin upon Order creation
+ * Send comprehensive HTML email & SMS notification to Admin upon Order creation/payment confirmation
  */
 const notifyAdminNewOrder = async (order) => {
     if (!order || !order._id) return;
@@ -19,7 +26,7 @@ const notifyAdminNewOrder = async (order) => {
     );
 
     if (!lockedOrder) {
-        console.log(`Notification already sent/locked for Order #${order.orderId}, skipping duplicate.`);
+        console.log(`[NOTIFY] Notification already sent/locked for Order #${order.orderId}, skipping duplicate.`);
         return;
     }
 
@@ -29,7 +36,10 @@ const notifyAdminNewOrder = async (order) => {
         timeStyle: "short"
     });
 
-    const itemsRows = (order.items || []).map((item, idx) => `
+    const isCod = order.paymentMethod === 'COD';
+    const isPaidOnline = order.paymentMethod === 'online' && order.paymentStatus === 'paid';
+
+    const itemsRows = (order.items || []).map((item) => `
         <tr style="border-bottom: 1px solid #E5E7EB;">
             <td style="padding: 10px 8px; font-size: 14px; color: #111;">
                 <b>${item.productName || item.name || 'Perfume'}</b>
@@ -51,6 +61,10 @@ const notifyAdminNewOrder = async (order) => {
         </tr>
     ` : "";
 
+    const badgeText = isCod ? 'Cash On Delivery (COD)' : (isPaidOnline ? 'Online Paid (Razorpay)' : 'Payment Pending');
+    const badgeBg = isPaidOnline ? '#DCFCE7' : (isCod ? '#FEF3C7' : '#F3F4F6');
+    const badgeColor = isPaidOnline ? '#166534' : (isCod ? '#92400E' : '#374151');
+
     const emailHtml = `
     <!DOCTYPE html>
     <html>
@@ -61,9 +75,7 @@ const notifyAdminNewOrder = async (order) => {
             .card { max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; border: 1px solid #E5E7EB; overflow: hidden; }
             .header { background: #000000; color: #FFFFFF; padding: 24px; text-align: center; }
             .content { padding: 24px; }
-            .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
-            .badge-paid { background: #DCFCE7; color: #166534; }
-            .badge-cod { background: #FEF3C7; color: #92400E; }
+            .badge { display: inline-block; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
             .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6B7280; margin: 20px 0 8px; }
             table { width: 100%; border-collapse: collapse; }
         </style>
@@ -72,7 +84,7 @@ const notifyAdminNewOrder = async (order) => {
         <div class="card">
             <div class="header">
                 <h1 style="margin: 0; font-size: 20px; letter-spacing: 1px;">BRUNATI PERFUMES</h1>
-                <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.8;">New Customer Order Received</p>
+                <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.8;">New Order Confirmed</p>
             </div>
             <div class="content">
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #E5E7EB; padding-bottom: 16px;">
@@ -81,8 +93,8 @@ const notifyAdminNewOrder = async (order) => {
                         <div style="font-size: 13px; color: #6B7280;">${orderTime}</div>
                     </div>
                     <div>
-                        <span class="badge ${order.paymentStatus === 'paid' ? 'badge-paid' : 'badge-cod'}">
-                            ${order.paymentMethod === 'COD' ? 'Cash On Delivery' : 'Online Paid'}
+                        <span class="badge" style="background: ${badgeBg}; color: ${badgeColor};">
+                            ${badgeText}
                         </span>
                     </div>
                 </div>
@@ -142,24 +154,24 @@ const notifyAdminNewOrder = async (order) => {
     </html>
     `;
 
-    // 1. Dispatch Admin Email
-    try {
-        await sendEmail({
-            email: ADMIN_EMAIL,
-            subject: `New Order Received – Order #${order.orderId}`,
-            message: `New Order Received! Order #${order.orderId}\nCustomer: ${order.customer?.name} (${order.customer?.phone})\nAmount: ₹${order.totalAmount}\nPayment: ${order.paymentMethod}`,
-            html: emailHtml
-        });
-        console.log(`[NOTIFY] Admin email sent to ${ADMIN_EMAIL} for Order #${order.orderId}`);
-    } catch (mailErr) {
-        console.error("[NOTIFY] Admin email failed:", mailErr.message);
+    // 1. Dispatch Admin Email to all configured admin recipients
+    for (const adminEmail of ADMIN_EMAILS) {
+        try {
+            await sendEmail({
+                email: adminEmail,
+                subject: `New ${isCod ? '[COD]' : '[PAID]'} Order Received – #${order.orderId} (₹${order.totalAmount})`,
+                message: `New Order Received! Order #${order.orderId}\nCustomer: ${order.customer?.name} (${order.customer?.phone})\nAmount: ₹${order.totalAmount}\nPayment: ${order.paymentMethod}`,
+                html: emailHtml
+            });
+            console.log(`[NOTIFY] Admin order notification sent to ${adminEmail} for Order #${order.orderId}`);
+        } catch (mailErr) {
+            console.error(`[NOTIFY] Admin email failed for ${adminEmail}:`, mailErr.message);
+        }
     }
 
     // 2. Dispatch Admin SMS
     try {
         const smsMessage = `Brunati Alert: New Order #${order.orderId} received from ${order.customer?.name || 'Customer'}. Amount: Rs.${order.totalAmount}. Payment: ${order.paymentMethod}.`;
-        
-        // Attempt via MSG91 Flow
         if (process.env.MSG91_AUTH_KEY) {
             await sendMsg91Sms(ADMIN_PHONE, {
                 order_id: order.orderId,
@@ -176,8 +188,96 @@ const notifyAdminNewOrder = async (order) => {
     }
 };
 
+/**
+ * Send notification to Admin when an order is cancelled or online payment fails/is abandoned
+ */
+const notifyAdminOrderCancelledOrFailed = async (order, reason = "Payment failed or cancelled") => {
+    if (!order || !order._id) return;
+
+    // Check if cancellation already alerted
+    const lockedOrder = await Order.findOneAndUpdate(
+        { _id: order._id, adminCancellationNotified: { $ne: true } },
+        { $set: { adminCancellationNotified: true } },
+        { new: true }
+    );
+
+    if (!lockedOrder) {
+        console.log(`[NOTIFY] Admin cancellation alert already sent for Order #${order.orderId}`);
+        return;
+    }
+
+    const orderTime = new Date(order.createdAt || Date.now()).toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        dateStyle: "medium",
+        timeStyle: "short"
+    });
+
+    const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F9FAFB; margin: 0; padding: 20px; }
+            .card { max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; border: 1px solid #FEE2E2; overflow: hidden; }
+            .header { background: #991B1B; color: #FFFFFF; padding: 20px; text-align: center; }
+            .content { padding: 24px; }
+            .alert-box { background: #FEF2F2; border: 1px solid #F87171; border-radius: 8px; padding: 14px; margin: 16px 0; color: #991B1B; font-size: 14px; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header">
+                <h1 style="margin: 0; font-size: 18px; letter-spacing: 1px;">BRUNATI PERFUMES</h1>
+                <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.9;">Order Cancelled / Payment Failed Alert</p>
+            </div>
+            <div class="content">
+                <div style="font-size: 16px; font-weight: 700; color: #111;">
+                    Order #${order.orderId || order._id}
+                </div>
+                <div style="font-size: 13px; color: #6B7280; margin-top: 2px;">${orderTime}</div>
+
+                <div class="alert-box">
+                    <b>Reason:</b> ${reason}
+                </div>
+
+                <div style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6B7280; margin: 16px 0 6px;">Customer Details</div>
+                <div style="background: #F9FAFB; padding: 12px 14px; border-radius: 8px; font-size: 14px; line-height: 1.5;">
+                    <div><b>Name:</b> ${order.customer?.name || 'Customer'}</div>
+                    <div><b>Phone:</b> <a href="tel:${order.customer?.phone}">${order.customer?.phone || 'N/A'}</a></div>
+                    ${order.customer?.email ? `<div><b>Email:</b> ${order.customer.email}</div>` : ''}
+                    <div><b>Amount:</b> ₹${order.totalAmount || 0}</div>
+                    <div><b>Payment Method:</b> ${order.paymentMethod || 'online'}</div>
+                </div>
+
+                <div style="margin-top: 20px; text-align: center;">
+                    <a href="${process.env.ADMIN_URL || 'https://brunati.in/admin/orders'}" style="display: inline-block; background: #000; color: #FFF; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px;">View in Admin Panel</a>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+
+    for (const adminEmail of ADMIN_EMAILS) {
+        try {
+            await sendEmail({
+                email: adminEmail,
+                subject: `[ALERT] Order Cancelled / Payment Failed – #${order.orderId || order._id} (₹${order.totalAmount || 0})`,
+                message: `Order #${order.orderId} was cancelled/payment failed.\nReason: ${reason}\nCustomer: ${order.customer?.name} (${order.customer?.phone})\nAmount: ₹${order.totalAmount}`,
+                html: emailHtml
+            });
+            console.log(`[NOTIFY] Admin cancellation alert sent to ${adminEmail} for Order #${order.orderId}`);
+        } catch (mailErr) {
+            console.error(`[NOTIFY] Admin cancellation email failed for ${adminEmail}:`, mailErr.message);
+        }
+    }
+};
+
 module.exports = {
     notifyAdminNewOrder,
-    ADMIN_EMAIL,
+    notifyAdminOrderCancelledOrFailed,
+    PRIMARY_ADMIN_EMAIL,
+    ADMIN_EMAILS,
     ADMIN_PHONE
 };

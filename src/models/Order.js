@@ -117,6 +117,11 @@ const orderSchema = new mongoose.Schema({
         default: false
     },
 
+    adminCancellationNotified: {
+        type: Boolean,
+        default: false
+    },
+
     orderStatus: {
         type: String,
         enum: [

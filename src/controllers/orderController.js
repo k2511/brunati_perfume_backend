@@ -2,7 +2,7 @@ const Order = require("../models/Order");
 const Product = require("../models/Product");
 const Settings = require("../models/Settings");
 const sendEmail = require("../utils/emailService");
-const { notifyAdminNewOrder } = require("../utils/adminNotificationService");
+const { notifyAdminNewOrder, notifyAdminOrderCancelledOrFailed } = require("../utils/adminNotificationService");
 const { notifyCustomerOrderSuccess } = require("../utils/customerNotificationService");
 const mongoose = require("mongoose");
 
@@ -223,6 +223,11 @@ exports.cancelOrder = async (req, res) => {
 
         order.orderStatus = "cancelled";
         await order.save();
+
+        // Alert Admin about order cancellation
+        notifyAdminOrderCancelledOrFailed(order, "Customer requested order cancellation").catch(err => {
+            console.error("Admin cancellation notification error:", err.message);
+        });
 
         if (order.customer?.email) {
             try {
